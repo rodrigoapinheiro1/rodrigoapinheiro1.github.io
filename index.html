@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Enviar Foto com Localização</title>
+  <style>
+    :root { --bg:#0f172a; --fg:#e2e8f0; --muted:#94a3b8; --card:#111827; --ok:#22c55e; --warn:#f59e0b; }
+    *{box-sizing:border-box}
+    body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Inter,Helvetica,Arial,sans-serif;background:linear-gradient(180deg,#0b1220,#0f172a);color:var(--fg);min-height:100dvh;display:flex;align-items:center;justify-content:center;padding:24px}
+    .wrap{width:100%;max-width:720px}
+    .card{background:rgba(17,24,39,.6);backdrop-filter: blur(10px);border:1px solid rgba(148,163,184,.15);border-radius:20px;padding:22px;box-shadow:0 10px 30px rgba(0,0,0,.3)}
+    h1{font-size:22px;margin:0 0 8px}
+    p.sub{margin:0 0 16px;color:var(--muted);font-size:14px}
+    label{display:block;font-size:13px;color:var(--muted);margin:12px 0 6px}
+    input,button{font:inherit}
+    .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    .btn{cursor:pointer;border:1px solid rgba(148,163,184,.25);border-radius:14px;padding:12px 14px;background:#0b1220;color:var(--fg);transition:.2s;}
+    .btn:hover{transform:translateY(-1px);box-shadow:0 8px 16px rgba(0,0,0,.25)}
+    .btn.primary{background:#1e293b}
+    .preview{display:grid;place-items:center;aspect-ratio:4/3;border-radius:16px;overflow:hidden;background:#0b1220;border:1px dashed rgba(148,163,184,.3)}
+    img#previewImg{width:100%;height:100%;object-fit:cover;display:none}
+    .meta{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+    .pill{background:#0b1220;border:1px solid rgba(148,163,184,.2);border-radius:999px;padding:8px 12px;font-size:12px;color:var(--muted)}
+    .status{margin-top:14px;font-size:13px}
+    .ok{color:var(--ok)}
+    .warn{color:var(--warn)}
+    .hidden{display:none}
+    .footer{margin-top:14px;color:var(--muted);font-size:12px}
+    .link{color:#60a5fa;text-decoration:none}
+    .field{display:flex;align-items:center;gap:8px}
+    input[type="file"]{display:block;width:100%;border:1px dashed rgba(148,163,184,.35);border-radius:12px;padding:10px;background:#0b1220;color:var(--muted)}
+    code{background:#0b1220;border:1px solid rgba(148,163,184,.2);border-radius:8px;padding:2px 6px}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>Enviar Foto com Localização</h1>
+      <p class="sub">Tire uma foto, confirme a localização e envie. Os dados serão registrados no formulário/planilha.</p>
+
+      <label for="photo">Foto</label>
+      <input id="photo" type="file" accept="image/*" capture="environment" />
+
+      <div class="preview" aria-live="polite">
+        <img id="previewImg" alt="Pré-visualização" />
+        <span id="noPhotoMsg" class="muted">Nenhuma foto selecionada ainda.</span>
+      </div>
+
+      <div class="row">
+        <div>
+          <label>Latitude</label>
+          <div class="pill" id="lat">—</div>
+        </div>
+        <div>
+          <label>Longitude</label>
+          <div class="pill" id="lng">—</div>
+        </div>
+        <div>
+          <label>Precisão</label>
+          <div class="pill" id="acc">—</div>
+        </div>
+      </div>
+
+      <div class="row" style="margin-top:8px">
+        <div>
+          <label>Data/Hora (local)</label>
+          <div class="pill" id="tsLocal">—</div>
+        </div>
+        <div>
+          <label>Data/Hora (UTC)</label>
+          <div class="pill" id="tsUtc">—</div>
+        </div>
+        <div>
+          <label>Dispositivo</label>
+          <div class="pill" id="ua">—</div>
+        </div>
+      </div>
+
+      <div class="row" style="margin-top:16px">
+        <button id="btnGeo" class="btn">Ler localização</button>
+        <button id="btnSend" class="btn primary">Enviar</button>
+      </div>
+
+      <div class="status" id="status"></div>
+
+      <p class="footer">Dica: para abrir diretamente a câmera no celular, use este campo de arquivo com <code>capture="environment"</code>. A localização só funciona sob <strong>HTTPS</strong> e com permissão do usuário.</p>
+    </div>
+  </div>
+
+<script>
+  // ======= CONFIGURE AQUI =======
+  // Cole abaixo a URL do seu endpoint Google Apps Script (Web App) após publicar.
+  const ENDPOINT_URL = "PASTE_YOUR_APPS_SCRIPT_WEB_APP_URL_HERE";
+  // ===============================
+
+  const $ = (id) => document.getElementById(id);
+  const el = {
+    file: $("photo"), img: $("previewImg"), noPhoto: $("noPhotoMsg"),
+    lat: $("lat"), lng: $("lng"), acc: $("acc"), tsLocal: $("tsLocal"), tsUtc: $("tsUtc"), ua: $("ua"),
+    btnGeo: $("btnGeo"), btnSend: $("btnSend"), status: $("status"),
+  };
+
+  let geo = { lat:null, lng:null, acc:null };
+  let photoDataUrl = null; // Base64 (dataURL) sem EXIF (é reencodado via canvas)
+
+  // Timestamp inicial
+  const now = new Date();
+  el.tsLocal.textContent = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'long' }).format(now);
+  el.tsUtc.textContent = now.toISOString();
+  el.ua.textContent = navigator.userAgent.split('(')[0].trim();
+
+  // Pré-visualização + limpeza de EXIF: desenha no canvas e exporta PNG/JPEG
+  el.file.addEventListener('change', async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      const MAX_W = 1600; // redimensiona para reduzir peso (ajuste se quiser)
+      const scale = Math.min(1, MAX_W / img.width);
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      // Use JPEG para reduzir tamanho. Qualidade 0.8 (~80%)
+      photoDataUrl = canvas.toDataURL('image/jpeg', 0.8);
+      el.img.src = photoDataUrl;
+      el.img.style.display = 'block';
+      el.noPhoto.style.display = 'none';
+      el.status.textContent = '';
+    };
+    const reader = new FileReader();
+    reader.onload = () => { img.src = reader.result; };
+    reader.readAsDataURL(file);
+  });
+
+  // Obter geolocalização
+  el.btnGeo.addEventListener('click', () => {
+    if (!('geolocation' in navigator)) {
+      return setStatus('Seu navegador não suporta geolocalização.', 'warn');
+    }
+    setStatus('Lendo localização…');
+    navigator.geolocation.getCurrentPosition((pos) => {
+      geo.lat = pos.coords.latitude;
+      geo.lng = pos.coords.longitude;
+      geo.acc = pos.coords.accuracy;
+      el.lat.textContent = geo.lat.toFixed(6);
+      el.lng.textContent = geo.lng.toFixed(6);
+      el.acc.textContent = `${Math.round(geo.acc)} m`;
+      setStatus('Localização capturada ✅', 'ok');
+    }, (err) => {
+      setStatus('Não foi possível obter a localização: ' + err.message, 'warn');
+    }, { enableHighAccuracy:true, timeout:10000, maximumAge:0 });
+  });
+
+  // Enviar
+  el.btnSend.addEventListener('click', async () => {
+    if (!ENDPOINT_URL || ENDPOINT_URL.includes('PASTE_YOUR')) {
+      return setStatus('Configure o ENDPOINT_URL primeiro.', 'warn');
+    }
+    if (!photoDataUrl) {
+      return setStatus('Selecione uma foto para enviar.', 'warn');
+    }
+    if (geo.lat === null || geo.lng === null) {
+      setStatus('Obtendo localização automaticamente…');
+      await getGeoOnce();
+    }
+
+    const payload = {
+      timestamp: new Date().toISOString(),
+      lat: geo.lat, lng: geo.lng, accuracy: geo.acc,
+      userAgent: navigator.userAgent,
+      imageBase64: photoDataUrl // dataURL completo
+    };
+
+    try {
+      setStatus('Enviando…');
+      const res = await fetch(ENDPOINT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (data.status === 'ok') {
+        setStatus(`Enviado! Arquivo: ${data.fileUrl}`, 'ok');
+      } else {
+        setStatus('Falha ao enviar: ' + (data.message || 'erro desconhecido'), 'warn');
+      }
+    } catch (e) {
+      setStatus('Erro de rede: ' + e.message, 'warn');
+    }
+  });
+
+  async function getGeoOnce(){
+    return new Promise((resolve) => {
+      if (!('geolocation' in navigator)) return resolve();
+      navigator.geolocation.getCurrentPosition((pos) => {
+        geo.lat = pos.coords.latitude; geo.lng = pos.coords.longitude; geo.acc = pos.coords.accuracy;
+        el.lat.textContent = geo.lat.toFixed(6);
+        el.lng.textContent = geo.lng.toFixed(6);
+        el.acc.textContent = `${Math.round(geo.acc)} m`;
+        resolve();
+      }, () => resolve());
+    });
+  }
+
+  function setStatus(msg, type){
+    el.status.textContent = msg;
+    el.status.className = 'status ' + (type || '');
+  }
+</script>
+</body>
+</html>
