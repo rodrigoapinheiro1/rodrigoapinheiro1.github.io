@@ -178,7 +178,7 @@
 
   // Enviar
   el.btnSend.addEventListener('click', async () => {
-    if (!ENDPOINT_URL || ENDPOINT_URL.includes('PASTE_YOUR')) {
+    if (!ENDPOINT_URL || ENDPOINT_URL.includes('https://script.google.com/macros/s/AKfycbziFn_oEQpDs4ZFhJtE7mMZZI87etGcFcFjhnOw7Enkqaosxe2XhSny9HCXfZePGmk0/exec')) {
       return setStatus('Configure o ENDPOINT_URL primeiro.', 'warn');
     }
     if (!photoDataUrl) {
