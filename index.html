@@ -77,12 +77,11 @@
         </div>
       </div>
 
-      <div class="row" style="margin-top:16px">
-        <button id="btnGeo" class="btn">Ler localização</button>
-        <button id="btnSend" class="btn primary">Enviar</button>
+      <div class=\"row\" style=\"margin-top:16px\">
+        <button id=\"btnSend\" class=\"btn primary\">Enviar</button>
       </div>
 
-      <div class="status" id="status"></div>
+      <div class=\"status\" id=\"status\"></div>
 
       <p class="footer">Dica: para abrir diretamente a câmera no celular, use este campo de arquivo com <code>capture="environment"</code>. A localização só funciona sob <strong>HTTPS</strong> e com permissão do usuário.</p>
     </div>
@@ -97,8 +96,7 @@
   const $ = (id) => document.getElementById(id);
   const el = {
     file: $("photo"), img: $("previewImg"), noPhoto: $("noPhotoMsg"),
-    lat: $("lat"), lng: $("lng"), acc: $("acc"), tsLocal: $("tsLocal"), tsUtc: $("tsUtc"), ua: $("ua"),
-    btnGeo: $("btnGeo"), btnSend: $("btnSend"), status: $("status"),
+    lat: $("lat"), lng: $("lng"), acc: $("acc"), tsLocal: $("tsLocal"), tsUtc: $("tsUtc"), ua: $("ua"),btnSend: $("btnSend"), status: $("status"),
   };
 
   let geo = { lat:null, lng:null, acc:null };
@@ -135,12 +133,13 @@
     reader.readAsDataURL(file);
   });
 
-  // Obter geolocalização
-  el.btnGeo.addEventListener('click', () => {
+  // Obter geolocalização automaticamente
+  async function requestGeo(autoMsg=true){
     if (!('geolocation' in navigator)) {
-      return setStatus('Seu navegador não suporta geolocalização.', 'warn');
+      setStatus('Seu navegador não suporta geolocalização.', 'warn');
+      return;
     }
-    setStatus('Lendo localização…');
+    if (autoMsg) setStatus('Obtendo localização…');
     navigator.geolocation.getCurrentPosition((pos) => {
       geo.lat = pos.coords.latitude;
       geo.lng = pos.coords.longitude;
@@ -152,6 +151,29 @@
     }, (err) => {
       setStatus('Não foi possível obter a localização: ' + err.message, 'warn');
     }, { enableHighAccuracy:true, timeout:10000, maximumAge:0 });
+  }
+
+  // Atualizar continuamente enquanto o usuário está na página (pega o melhor fix disponível)
+  let geoWatchId = null;
+  function startGeoWatch(){
+    if (!('geolocation' in navigator)) return;
+    if (geoWatchId !== null) return;
+    geoWatchId = navigator.geolocation.watchPosition((pos)=>{
+      geo.lat = pos.coords.latitude; geo.lng = pos.coords.longitude; geo.acc = pos.coords.accuracy;
+      el.lat.textContent = geo.lat.toFixed(6);
+      el.lng.textContent = geo.lng.toFixed(6);
+      el.acc.textContent = `${Math.round(geo.acc)} m`;
+    }, ()=>{}, { enableHighAccuracy:true, timeout:15000, maximumAge:0 });
+  }
+
+  document.addEventListener('visibilitychange', ()=>{
+    if (document.visibilityState === 'visible') startGeoWatch();
+  });
+
+  // Rodar automaticamente ao carregar
+  window.addEventListener('load', ()=>{
+    requestGeo();
+    startGeoWatch();
   });
 
   // Enviar
@@ -164,7 +186,7 @@
     }
     if (geo.lat === null || geo.lng === null) {
       setStatus('Obtendo localização automaticamente…');
-      await getGeoOnce();
+      await requestGeo(false);
     }
 
     const payload = {
