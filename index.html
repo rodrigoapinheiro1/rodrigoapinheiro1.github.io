@@ -184,33 +184,34 @@
     if (!photoDataUrl) {
       return setStatus('Selecione uma foto para enviar.', 'warn');
     }
-    if (geo.lat === null || geo.lng === null) {
-      setStatus('Obtendo localização automaticamente…');
-      await requestGeo(false);
-    }
 
-    const payload = {
-      timestamp: new Date().toISOString(),
-      lat: geo.lat, lng: geo.lng, accuracy: geo.acc,
-      userAgent: navigator.userAgent,
-      imageBase64: photoDataUrl // dataURL completo
-    };
+    if (geo.lat === null || geo.lng === null) await requestGeo(false);
 
     try {
       setStatus('Enviando…');
-      const res = await fetch(ENDPOINT_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-      const data = await res.json();
+      el.btnSend.disabled = true;
+
+      const form = new FormData();
+      form.append('timestamp', new Date().toISOString());
+      form.append('lat', geo.lat ?? '');
+      form.append('lng', geo.lng ?? '');
+      form.append('accuracy', geo.acc ?? '');
+      form.append('userAgent', navigator.userAgent);
+      form.append('imageBase64', photoDataUrl);
+
+      const res = await fetch(ENDPOINT_URL, { method: 'POST', body: form });
+
+      let data; try { data = await res.json(); } catch(_) { data = { status: res.ok ? 'ok' : 'error', raw: await res.text() }; }
+
       if (data.status === 'ok') {
-        setStatus(`Enviado! Arquivo: ${data.fileUrl}`, 'ok');
+        setStatus(`Enviado! ${data.fileUrl ? 'Arquivo: ' + data.fileUrl : ''}`, 'ok');
       } else {
-        setStatus('Falha ao enviar: ' + (data.message || 'erro desconhecido'), 'warn');
+        setStatus('Falha ao enviar: ' + (data.message || data.raw || `HTTP ${res.status}`), 'warn');
       }
     } catch (e) {
       setStatus('Erro de rede: ' + e.message, 'warn');
+    } finally {
+      el.btnSend.disabled = false;
     }
   });
 
